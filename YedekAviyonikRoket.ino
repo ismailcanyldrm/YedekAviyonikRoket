@@ -1,6 +1,6 @@
 
 #include <SimpleKalmanFilter.h>
-#include "LoRa_E22.h"
+#include "LoRa_E32.h"
 #include<Wire.h>
 #include <SFE_BMP180.h>
 #include <SoftwareSerial.h>
@@ -10,25 +10,23 @@
 
 
 Adafruit_MPU6050 mpu;
+
 int t1 = 3;
 int t2 = 4;
-float flame_sensor =A0;
 float kalman_new = 0, cov_new = 0, kalman_gain = 0, kalman_calculated = 0;
 int sayac = 0;
 float Xivme_kalman_old = 0 , Xivme_cov_old = 0, Yivme_kalman_old = 0 , Yivme_cov_old = 0, Zivme_kalman_old = 0 , Zivme_cov_old = 0;
 float ivmeX = 0, ivmeY = 0, ivmeZ = 0;
 float Xdonme_kalman_old = 0 , Xdonme_cov_old = 0, Ydonme_kalman_old = 0 , Ydonme_cov_old = 0, Zdonme_kalman_old = 0 , Zdonme_cov_old = 0;
 float donmeX = 0, donmeY = 0, donmeZ = 0;
-float iX, iY, iZ, gX, gY, gZ,ta,ts ;
+double iX, iY, iZ, gX, gY, gZ ;
 TinyGPS gps;
-LoRa_E22 E22(&Serial);
-SoftwareSerial ss(6,5);//rx tx
+SoftwareSerial lora(10,11);//rx tx
+LoRa_E32 e32ttl(&lora);
+SoftwareSerial ss(4,3);//rx tx
 SFE_BMP180 pressure;
-bool tetik1, tetik2,donme;
+bool tetik1, tetik2 , tetik;
 static void smartdelay(unsigned long ms);
-int tix , th, thf  = 0;
-float fark,fark2 = 0.0;
-
 struct Signal {
     byte Xgyro[4];
     byte Ygyro[4];
@@ -41,17 +39,13 @@ struct Signal {
     byte gpsE[4];
     byte gpsB[4];
     byte gpsH[4];
-    byte gpsS[4];
-    byte T1[4];
-    byte T2[4];
 } data;
  
 
 SimpleKalmanFilter pressureKalmanFilter(1, 1, 0.01);
-float baseline,h,P,t ,e ,b,be,bes; 
+float baseline,h,P,t ,e ,b,be; 
 
 void setup() {
-
   mpu.begin();
   mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
   mpu.setGyroRange(MPU6050_RANGE_500_DEG);
@@ -59,13 +53,12 @@ void setup() {
   Serial.begin(9600);
   ss.begin(9600);
   Wire.begin();
-  E22.begin();
+  e32ttl.begin();
   pressure.begin();
   baseline = getPressure();
-  pinMode(t1,OUTPUT);
+    pinMode(t1,OUTPUT);
   pinMode(t2, OUTPUT);
-  digitalWrite(t1, LOW); 
-  digitalWrite(t2, LOW); 
+
 }
 
 double getPressure() {
@@ -92,72 +85,73 @@ double getPressure() {
 
 
 void loop() {
-  
-    bmp180();
-    gyro();
-    ivme();
-    gpsAltitude();
-    gpsKonum();
-    gpsSpeed();
-    smartdelay(250);
-    
-    Yfark();
-    Xfark();
-    if ((h >= 1500 && fark >1.0) && (iX<=-8 && fark2 > 1.0)){
+
+  if (tetik == 0) {
+    if (h >= 2700) {
+   
       digitalWrite(t1, HIGH);
-      thf=1 ;
-      bmp180();
-      ts = h;
-    }
-    if((h <= 620 && thf == 1 )&&( fark > 1.0 && fark2 > 1.0)){
-      digitalWrite(t2, HIGH); 
-      thf =0;
-      bmp180();
-      ta = h;
-    }
+      tetik1=1;
+      Serial.println(h);
+      tetik=1;
 
-       
-  *(float*)(data.Xgyro) = gX ;
-  *(float*)(data.Ygyro) = gY ;
-  *(float*)(data.Zgyro) = gZ ;
+      }
+  }
+  if (tetik == 1){
+     if (h <= 600) {
+ 
+      digitalWrite(t2, HIGH);
+      digitalWrite(t1, LOW);
+      Serial.println(h);
+      tetik=0;
+      tetik2=1;
+      }
+  }
+  
+  
+bmp180();
+gyro();
+ivme();
+gpsAltitude();
+gpsKonum();
+smartdelay(500);
 
-  *(float*)(data.Xivme) = iX ;
-  *(float*)(data.Yivme) = iY ;
-  *(float*)(data.Zivme) = iZ ;
-  
-  *(float*)(data.h) = h ;
-  *(float*)(data.p) = P ;
-  
-  *(float*)(data.gpsE) = e ;
-  *(float*)(data.gpsB) = b ;
-  *(float*)(data.gpsH) = be ;
-  *(float*)(data.gpsS) = bes ;
+  struct Signal  {
+    byte Xgyro[4];
+    byte Ygyro[4];
+    byte Zgyro[4];
+    byte Xivme[4];
+    byte Yivme[4];
+    byte Zivme[4];
+    byte h[4];
+    byte p[4];
+    byte gpsE[4];
+    byte gpsB[4];
+    byte gpsH[4];
+    
+  } data2;
+ 
+  *(float*)(data2.Xgyro) = gX ;
+  *(float*)(data2.Ygyro) = gY ;
+  *(float*)(data2.Zgyro) = gZ ;
 
-  *(float*)(data.T1) = ts ;
-  *(float*)(data.T2) = ta ;
+  *(float*)(data2.Xivme) = iX ;
+  *(float*)(data2.Yivme) = iY ;
+  *(float*)(data2.Zivme) = iZ ;
   
-  ResponseStatus rs = E22.sendFixedMessage(0, 63, 20, &data, sizeof(Signal));
+  *(float*)(data2.h) = h ;
+  *(float*)(data2.p) = P ;
+  
+  *(float*)(data2.gpsE) = e ;
+  *(float*)(data2.gpsB) = b ;
+  *(float*)(data2.gpsH) = be ;
+
+  
+
+  ResponseStatus rs = e32ttl.sendFixedMessage(0, 63, 20, &data2, sizeof(Signal));
+  Serial.println(rs.getResponseDescription());
+
+
 }
-void Yfark(){
-  
-  bmp180();
-  fark = h;
-  delay(250);
-  bmp180();
-  fark = fark - h;
-  
-}
-void Xfark(){
-  
-  bmp180();
-  fark2 = h;
-  delay(250);
-  bmp180();
-  fark2= fark2 - h;
-  
-}
-
-  
 void gyro()
 {
   float gyro[3]= {0.0,0.0,0.0};
@@ -218,36 +212,38 @@ void gpsKonum() {
     e = gpsk[0];
     b = gpsk[1];
   } else {
-    gpsk[0]= float(flat),6;
-    gpsk[1]= float(flon),6;
-    e = gpsk[0];
-    b = gpsk[1]; 
+    gpsk[0]= float((flat),6);
+    gpsk[1]= float((flon),6);
+    float e = gpsk[0];
+    float b = gpsk[1];
+    
   }
 }
+/*
+void gpsSatellite() {
+  float satellite, invalid;
+  satellite = gps.satellites();
+  invalid   = TinyGPS::GPS_INVALID_SATELLITES;
+  if (satellite == invalid) {
+    lora.print("*");
+    lora.print(float(0.00));
+
+  } else {
+    lora.print("*");
+    lora.print(satellite); 
+  }
+}*/
 void gpsAltitude(){
   float gpsa[1]= {0.00};
   float gpsAltitude , invalid;
-  gpsAltitude = gps.f_altitude() ;
-  invalid   = TinyGPS::GPS_INVALID_F_ALTITUDE;
+  gpsAltitude = gps.altitude() ;
+  invalid   = TinyGPS::GPS_INVALID_ALTITUDE;
   if (gpsAltitude == invalid) {
-    gpsa[0]= 0.00;
+    gpsa[2]= 0.00;
     be = gpsa[0];
   } else {
-    gpsa[0]= float(gpsAltitude-909.20);
+    gpsa[2]= float(gpsAltitude/1229.0000);
     be = gpsa[0];
-    }
-}
-void gpsSpeed(){
-  float gpss[1]= {0.00};
-  float gpsSpeed , invalid;
-  gpsSpeed = gps.f_speed_kmph() ;
-  invalid   = TinyGPS::GPS_INVALID_F_SPEED;
-  if (gpsSpeed == invalid) {
-    gpss[0]= 0.00;
-    bes = gpss[0];
-  } else {
-    gpss[0]= float(gpsSpeed);
-    bes = gpss[0];
     }
 }
 static void smartdelay(unsigned long ms) {
